@@ -406,6 +406,7 @@ async def _resolve_vidstream_sidecar(url: str) -> dict | None:
     Falls back to the Node.js sidecar for rabbitstream/megacloud domains.
     """
     import os
+    import asyncio
     from urllib.parse import quote, urlparse
     
     parsed = urlparse(url)
@@ -419,7 +420,10 @@ async def _resolve_vidstream_sidecar(url: str) -> dict | None:
     sidecar_url = os.environ.get("VIDSTREAM_API_URL", "http://localhost:4030")
     
     try:
-        res = await http_client.get_json(f"{sidecar_url}/decrypt?url={quote(url)}")
+        res = await asyncio.wait_for(
+            http_client.get_json(f"{sidecar_url}/decrypt?url={quote(url)}"),
+            timeout=5.0
+        )
         
         if not res or not res.get("sources"):
             return None
@@ -440,8 +444,10 @@ async def _resolve_fireplayer(url: str) -> dict | None:
     """
     Extract stream from FirePlayer (as-cdn*.top) by calling its getVideo API.
     Returns master m3u8 URL with all quality variants.
+    Fails fast (5s timeout) if server is down or unresponsive.
     """
     from urllib.parse import urlparse
+    import asyncio
     
     parsed = urlparse(url)
     base_url = f"{parsed.scheme}://{parsed.netloc}"
@@ -461,7 +467,10 @@ async def _resolve_fireplayer(url: str) -> dict | None:
         post_data = {"hash": video_id, "r": "https://animedekho.app/"}
         
         import json
-        res_text = await http_client.post_no_cache(api_url, data=post_data, headers=headers)
+        res_text = await asyncio.wait_for(
+            http_client.post_no_cache(api_url, data=post_data, headers=headers),
+            timeout=5.0
+        )
         
         if not res_text:
             return None
@@ -486,6 +495,7 @@ async def _resolve_vidsrc_xerver(url: str) -> dict | None:
     """
     from urllib.parse import urlparse, parse_qs, quote
     import json
+    import asyncio
 
     parsed = urlparse(url)
     base_url = f"{parsed.scheme}://{parsed.netloc}"
@@ -493,10 +503,16 @@ async def _resolve_vidsrc_xerver(url: str) -> dict | None:
     encrypted_url = qs.get("url", [""])[0]
 
     if not encrypted_url:
-        html = await http_client.get(url, headers={"Referer": "https://animedekho.app/"})
-        m = re.search(r'ENCRYPTED_URL\s*=\s*["\']([^"\']+)["\']', html)
-        if m:
-            encrypted_url = m.group(1)
+        try:
+            html = await asyncio.wait_for(
+                http_client.get(url, headers={"Referer": "https://animedekho.app/"}),
+                timeout=5.0
+            )
+            m = re.search(r'ENCRYPTED_URL\s*=\s*["\']([^"\']+)["\']', html)
+            if m:
+                encrypted_url = m.group(1)
+        except Exception:
+            pass
 
     if not encrypted_url:
         return None
@@ -508,7 +524,10 @@ async def _resolve_vidsrc_xerver(url: str) -> dict | None:
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
     }
     try:
-        resp_text = await http_client.get_no_cache(fetch_url, headers=headers)
+        resp_text = await asyncio.wait_for(
+            http_client.get_no_cache(fetch_url, headers=headers),
+            timeout=5.0
+        )
         if not resp_text:
             return None
         data = json.loads(resp_text)
