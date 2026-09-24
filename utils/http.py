@@ -22,7 +22,7 @@ log = logging.getLogger(__name__)
 
 # ── Constants ──────────────────────────────────────────────────────────
 
-DEFAULT_TIMEOUT = aiohttp.ClientTimeout(total=30, connect=10)
+DEFAULT_TIMEOUT = aiohttp.ClientTimeout(total=15, connect=8)
 DEFAULT_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -184,23 +184,22 @@ class HTTPClient:
             if headers:
                 merged_headers.update(headers)
 
-            # Recreate scraper if needed (fresh challenge cookies)
             if self._cloudscraper is None:
                 self._cloudscraper = cloudscraper.create_scraper()
 
             if method.upper() == "POST":
                 resp = self._cloudscraper.post(
-                    url, data=data, headers=merged_headers, timeout=30
+                    url, data=data, headers=merged_headers, timeout=8
                 )
             else:
                 resp = self._cloudscraper.get(
-                    url, headers=merged_headers, timeout=30
+                    url, headers=merged_headers, timeout=8
                 )
             resp.raise_for_status()
             return resp.text
 
         last_error = None
-        for attempt in range(3):
+        for attempt in range(2):
             try:
                 text = await loop.run_in_executor(None, _do_request)
                 if not no_cache and ttl > 0 and cache_key:
@@ -210,14 +209,13 @@ class HTTPClient:
                 last_error = e
                 status = getattr(getattr(e, 'response', None), 'status_code', 0)
                 log.warning(
-                    "Cloudscraper request failed (attempt %d/3): %s %s — %s (status=%s)",
+                    "Cloudscraper request failed (attempt %d/2): %s %s — %s (status=%s)",
                     attempt + 1, method, url, e, status,
                 )
-                # Recreate scraper on 403/429 to get fresh challenge
                 if status in (403, 429):
                     self._cloudscraper = cloudscraper.create_scraper()
-                if attempt < 2:
-                    await asyncio.sleep(2 ** attempt)
+                if attempt < 1:
+                    await asyncio.sleep(0.5)
 
         # Fallback to aiohttp if cloudscraper completely fails
         log.warning("Cloudscraper failed for %s, trying aiohttp fallback", url)
