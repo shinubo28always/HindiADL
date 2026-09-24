@@ -6,6 +6,7 @@ from .callbacks import callback_router
 from .messages import handle_text
 from .admin import (
     cmd_adduser, cmd_removeuser, cmd_users,
+    cmd_addchannel, cmd_removechannel, cmd_channels, cmd_monitor,
     cmd_setchannellink,
     cmd_delete, delete_callback,
 )
@@ -14,6 +15,7 @@ from .admin_ai import cmd_setai, cmd_ai
 __all__ = [
     "cmd_start", "cmd_help", "cmd_search", "callback_router", "handle_text",
     "cmd_adduser", "cmd_removeuser", "cmd_users",
+    "cmd_addchannel", "cmd_removechannel", "cmd_channels", "cmd_monitor",
     "cmd_setchannellink",
     "cmd_delete",
     "cmd_setai", "cmd_ai",
@@ -36,6 +38,10 @@ def register_handlers(app: Client):
     app.add_handler(MessageHandler(cmd_adduser, filters.command("adduser") & filters.private))
     app.add_handler(MessageHandler(cmd_removeuser, filters.command("removeuser") & filters.private))
     app.add_handler(MessageHandler(cmd_users, filters.command("users") & filters.private))
+    app.add_handler(MessageHandler(cmd_addchannel, filters.command("addchannel") & filters.private))
+    app.add_handler(MessageHandler(cmd_removechannel, filters.command("removechannel") & filters.private))
+    app.add_handler(MessageHandler(cmd_channels, filters.command("channels") & filters.private))
+    app.add_handler(MessageHandler(cmd_monitor, filters.command("monitor") & filters.private))
     app.add_handler(MessageHandler(cmd_setchannellink, filters.command("setchannellink") & filters.private))
     app.add_handler(MessageHandler(cmd_delete, filters.command("delete") & filters.private))
 
