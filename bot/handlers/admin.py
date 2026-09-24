@@ -65,6 +65,137 @@ async def cmd_users(client: Client, message: Message):
     )
 
 
+@require_owner
+async def cmd_addchannel(client: Client, message: Message):
+    """Map a key (series_slug, genre, or 'default') to a target channel ID."""
+    args = _parse_args(message)
+    if len(args) < 2 or not args[1].lstrip("-").isdigit():
+        await message.reply_text(
+            "Usage: /addchannel <key> <channel_id>\n\n"
+            "Examples:\n"
+            "• <code>/addchannel default -1001234567890</code>\n"
+            "• <code>/addchannel action -1001234567890</code>\n"
+            "• <code>/addchannel naruto-shippuden -1001234567890</code>",
+            parse_mode=enums.ParseMode.HTML,
+        )
+        return
+
+    key = args[0].strip().lower()
+    cid = int(args[1])
+
+    from bot.database import db
+    if not db:
+        await message.reply_text("⚠️ Database not initialized.")
+        return
+
+    await db.set_channel_mapping(key, cid)
+    await message.reply_text(
+        f"✅ Channel mapping saved!\n"
+        f"Key: <code>{key}</code>\n"
+        f"Channel ID: <code>{cid}</code>",
+        parse_mode=enums.ParseMode.HTML,
+    )
+
+
+@require_owner
+async def cmd_removechannel(client: Client, message: Message):
+    """Remove a channel mapping for a key."""
+    args = _parse_args(message)
+    if not args:
+        await message.reply_text("Usage: /removechannel <key>")
+        return
+
+    key = args[0].strip().lower()
+    from bot.database import db
+    if not db:
+        await message.reply_text("⚠️ Database not initialized.")
+        return
+
+    removed = await db.delete_channel_mapping(key)
+    if removed:
+        await message.reply_text(f"✅ Removed mapping for <code>{key}</code>.", parse_mode=enums.ParseMode.HTML)
+    else:
+        await message.reply_text(f"ℹ️ No channel mapping found for <code>{key}</code>.", parse_mode=enums.ParseMode.HTML)
+
+
+@require_owner
+async def cmd_channels(client: Client, message: Message):
+    """List all channel mappings."""
+    from bot.database import db
+    if not db:
+        await message.reply_text("⚠️ Database not initialized.")
+        return
+
+    mappings = await db.get_all_channel_mappings()
+    if not mappings:
+        from config.settings import settings
+        default_ch = settings.bot.main_channel
+        await message.reply_text(
+            f"📡 <b>Channel Mappings:</b>\n"
+            f"No custom mappings set.\n"
+            f"Default channel: <code>{default_ch}</code>",
+            parse_mode=enums.ParseMode.HTML,
+        )
+        return
+
+    lines = [f"• <code>{m['key']}</code> ➔ <code>{m['channel_id']}</code>" for m in mappings]
+    await message.reply_text(
+        f"📡 <b>Channel Mappings ({len(mappings)}):</b>\n\n" + "\n".join(lines),
+        parse_mode=enums.ParseMode.HTML,
+    )
+
+
+@require_owner
+async def cmd_monitor(client: Client, message: Message):
+    """Manage auto monitoring website service."""
+    args = _parse_args(message)
+    from bot.database import db
+    from bot.monitor import auto_monitor
+
+    if not db:
+        await message.reply_text("⚠️ Database not initialized.")
+        return
+
+    action = args[0].lower() if args else "status"
+
+    if action == "on":
+        await db.set_monitor_status(True)
+        await message.reply_text("✅ Auto monitoring <b>ENABLED</b>.", parse_mode=enums.ParseMode.HTML)
+
+    elif action == "off":
+        await db.set_monitor_status(False)
+        await message.reply_text("🛑 Auto monitoring <b>DISABLED</b>.", parse_mode=enums.ParseMode.HTML)
+
+    elif action == "check":
+        if not auto_monitor:
+            await message.reply_text("⚠️ Auto monitor service not initialized.")
+            return
+
+        status_msg = await message.reply_text("⏳ Running immediate website check...")
+        summary = await auto_monitor.check_new_content()
+        await status_msg.edit_text(
+            f"✅ <b>Auto Check Completed</b>\n\n"
+            f"• Series checked: {summary.get('series_checked', 0)}\n"
+            f"• Movies checked: {summary.get('movies_checked', 0)}\n"
+            f"• Downloaded & uploaded: {summary.get('downloaded', 0)}\n"
+            f"• Errors: {summary.get('errors', 0)}",
+            parse_mode=enums.ParseMode.HTML,
+        )
+
+    else:
+        status = await db.get_monitor_status()
+        status_str = "🟢 Enabled" if status else "🔴 Disabled"
+        await message.reply_text(
+            f"🤖 <b>Auto Monitoring Service</b>\n\n"
+            f"Status: {status_str}\n\n"
+            f"<b>Commands:</b>\n"
+            f"• <code>/monitor on</code> — Enable auto monitoring\n"
+            f"• <code>/monitor off</code> — Disable auto monitoring\n"
+            f"• <code>/monitor check</code> — Run check immediately\n"
+            f"• <code>/monitor status</code> — Show status",
+            parse_mode=enums.ParseMode.HTML,
+        )
+
 
 @require_owner
 async def cmd_setchannellink(client: Client, message: Message):
