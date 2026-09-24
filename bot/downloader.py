@@ -170,13 +170,15 @@ def _get_origin(url: str) -> str:
     domain = urlparse(url).netloc.lower()
     if not domain:
         return "https://animedekho.app"
+    if "googleusercontent" in domain:
+        return ""
     if "megacloud" in domain or "rabbit" in domain or "dokicloud" in domain:
         return "https://megacloud.tv"
     elif "vmeas" in domain or "vidmoly" in domain or "vmbox" in domain:
         return "https://vidmoly.to"
     elif "turboviplay" in domain or "turbosplayer" in domain or "emturbovid" in domain:
         return "https://emturbovid.com"
-    elif "xerver" in domain or "vidsrc" in domain or "googleusercontent" in domain:
+    elif "xerver" in domain or "vidsrc" in domain:
         return "https://mirror.xerver.xyz"
     elif "animedrive" in domain or "hubcloud" in domain or "gamerxyt" in domain:
         return "https://hubcloud.ist"
@@ -201,11 +203,13 @@ async def direct_http_download(
     last_edit = [0.0]
     start_time = time.time()
 
+    ref = referer or (_get_origin(url) + "/" if _get_origin(url) else "")
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-        "Referer": referer or _get_origin(url) + "/",
         "Accept": "*/*",
     }
+    if ref:
+        headers["Referer"] = ref
 
     try:
         timeout = aiohttp.ClientTimeout(total=2400, connect=30, sock_read=60)
