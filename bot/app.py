@@ -1,6 +1,8 @@
 """Application factory — builds and configures the Pyrogram bot."""
 
+import os
 import logging
+from aiohttp import web
 
 from pyrogram import Client
 
@@ -9,6 +11,39 @@ from config.settings import settings
 log = logging.getLogger(__name__)
 
 active_bot_client: Client | None = None
+_health_runner: web.AppRunner | None = None
+
+
+async def _start_health_server():
+    """Start lightweight HTTP server for deployment health checks (Koyeb/Railway/Render)."""
+    global _health_runner
+    port_str = os.environ.get("PORT", "8000")
+    try:
+        port = int(port_str)
+    except ValueError:
+        port = 8000
+
+    app = web.Application()
+
+    async def _health_handler(request):
+        return web.Response(text="OK", status=200)
+
+    app.router.add_get("/", _health_handler)
+    app.router.add_get("/health", _health_handler)
+
+    _health_runner = web.AppRunner(app)
+    await _health_runner.setup()
+    site = web.TCPSite(_health_runner, "0.0.0.0", port)
+    await site.start()
+    log.info("HTTP health check server started on port %d", port)
+
+
+async def _stop_health_server():
+    global _health_runner
+    if _health_runner:
+        await _health_runner.cleanup()
+        _health_runner = None
+        log.info("HTTP health check server stopped")
 
 
 async def _on_start(client: Client):
@@ -51,6 +86,16 @@ async def _on_start(client: Client):
         bot_username=bot_username,
     )
     log.info("Library manager initialized (bot: @%s)", bot_username)
+
+    # Start HTTP Health Check Server for platform deployment health checks
+    await _start_health_server()
+
+    # Init Auto Monitor Service
+    from bot.monitor import AutoMonitor
+    import bot.monitor as monitor_mod
+    monitor_mod.auto_monitor = AutoMonitor(client=client, interval_seconds=600)
+    monitor_mod.auto_monitor.start()
+    log.info("Auto monitor initialized and started")
 
     # Resolve channel peers so Pyrogram can send to them
     # Try get_chat first, fall back to raw API (needed on fresh sessions)
@@ -111,20 +156,32 @@ async def _on_start(client: Client):
                 BotCommand("adduser", "Approve a user"),
                 BotCommand("removeuser", "Remove a user"),
                 BotCommand("users", "List approved users"),
+                BotCommand("addchannel", "Map a channel for slug/genre/default"),
+                BotCommand("removechannel", "Remove a channel mapping"),
+                BotCommand("channels", "List channel mappings"),
+                BotCommand("monitor", "Auto monitoring website control"),
                 BotCommand("setchannellink", "Set channel invite link"),
                 BotCommand("delete", "Delete a series or file"),
             ], scope=BotCommandScopeChat(settings.bot.owner_id))
         log.info("Bot commands menu set successfully")
     except Exception as e:
         log.warning("Failed to set bot commands: %s", e)
+
+
 async def _on_stop(client: Client):
     """Called on shutdown — cleanup."""
+    await _stop_health_server()
+
+    from bot.monitor import auto_monitor
+    if auto_monitor:
+        await auto_monitor.stop()
+
     from utils.http import http_client
     await http_client.close()
     from bot.database import db
     if db:
         db.close()
-    log.info("HTTP client & MongoDB closed")
+    log.info("Auto monitor stopped, HTTP client & MongoDB closed")
 
 
 def create_app() -> Client:
@@ -143,6 +200,7 @@ def create_app() -> Client:
         api_id=settings.bot.api_id,
         api_hash=settings.bot.api_hash,
         bot_token=settings.bot.token,
+        workers=20,
     )
 
     # Register startup/shutdown hooks
